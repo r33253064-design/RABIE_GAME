@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>لعبة الطائر: إصدار الشخصيات والقائمة الموسيقية</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #111;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            user-select: none;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        canvas {
+            border: 4px solid #fff;
+            background-color: #4ec0ca;
+            box-shadow: 0px 15px 40px rgba(0,0,0,0.8);
+            border-radius: 12px;
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="gameCanvas" width="400" height="600"></canvas>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+// --- 1. إعداد قائمة الموسيقى (Playlist) ---
+// تم تعديل المسار الأول ليتطابق مع اسم ملفك تماماً
+const playlist = [
+    { src: 'لشةث شيسيشسيسيشي.mp3', title: "الموسيقى الخاصة بك 1" },
+    { src: 'track2.mp3', title: "موسيقى الطيران 2" },
+    { src: 'track3.mp3', title: "نغمة المرح 3" }
+];
+let currentTrackIndex = 0;
+const bgMusic = new Audio();
+bgMusic.src = playlist[currentTrackIndex].src;
+bgMusic.loop = true;
+bgMusic.volume = 0.4;
+let isMusicPlaying = false;
+
+function changeTrack(direction) {
+    currentTrackIndex += direction;
+    if (currentTrackIndex >= playlist.length) currentTrackIndex = 0;
+    if (currentTrackIndex < 0) currentTrackIndex = playlist.length - 1;
+    
+    bgMusic.src = playlist[currentTrackIndex].src;
+    if (isMusicPlaying) {
+        bgMusic.play().catch(err => console.log("تنبيه: ملف الصوت غير موجود في المجلد حالياً."));
+    }
+}
+
+// --- 2. إعداد صورة الخلفية ---
+const bgImg = new Image();
+let isBgLoaded = false;
+bgImg.onload = () => isBgLoaded = true;
+bgImg.src = '15565011436747634051.png';
+
+// --- 3. إعداد مصفوفة الشخصيات (Skins) ---
+const skins = [
+    { img: new Image(), loaded: false, fallbackColor: "#f8e71c", name: "عبد مالك" },
+    { img: new Image(), loaded: false, fallbackColor: "#ff4757", name: "ادم" },
+    { img: new Image(), loaded: false, fallbackColor: "#9b59b6", name: "فارس" }
+];
+
+skins[0].img.onload = () => skins[0].loaded = true;
+skins[0].img.src = 'Scre 2026-05-18 032934.png'; 
+
+skins[1].img.onload = () => skins[1].loaded = true;
+skins[1].img.src = 'Screenshot 2026-06-15 053645.png'; 
+
+skins[2].img.onload = () => skins[2].loaded = true;
+skins[2].img.src = 'Screenshot 2026-06-18 225203.png'; 
+
+let currentSkinIndex = 0; 
+
+// --- متغيرات اللعبة والفيزياء ---
+let gameStarted = false;
+let gameOver = false;
+let birdX = 80;
+let birdY = 250;
+let velocity = 0;
+const gravity = 0.35;
+const jump = -6.2;
+let rotation = 0;
+
+const birdWidth = 44;
+const birdHeight = 44;
+
+let towers = [];
+const towerWidth = 72;
+const towerGap = 145;
+const towerSpeed = 2.4;
+let frames = 0;
+let score = 0;
+let highScore = 0;
+
+// --- أبعاد واجهة شريط الشخصيات UI ---
+const skinBarY = 30;
+const skinBoxWidth = 60;
+const skinBoxHeight = 60;
+const skinBoxGap = 20;
+const totalBarWidth = (3 * skinBoxWidth) + (2 * skinBoxGap);
+const startX = (canvas.width - totalBarWidth) / 2;
+
+// --- أبعاد واجهة أزرار التحكم بالموسيقى ---
+const musicBarY = 135;
+const btnWidth = 55;
+const btnHeight = 28;
+const btnGap = 15;
+const totalMusicWidth = (3 * btnWidth) + (2 * btnGap);
+const musicStartX = (canvas.width - totalMusicWidth) / 2;
+
+// --- الاستجابة للتحكم وضغط الأزرار ---
+document.addEventListener("keydown", (e) => {
+    if (e.code === "Space") handleAction(null, null);
+});
+
+canvas.addEventListener("mousedown", (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+    handleAction(clickX, clickY);
+});
+
+function handleAction(clickX, clickY) {
+    if (!gameStarted && clickX !== null && clickY !== null) {
+        // فحص النقر على صناديق الشخصيات
+        for (let i = 0; i < skins.length; i++) {
+            let boxX = startX + i * (skinBoxWidth + skinBoxGap);
+            if (clickX >= boxX && clickX <= boxX + skinBoxWidth && clickY >= skinBarY && clickY <= skinBarY + skinBoxHeight) {
+                currentSkinIndex = i; 
+                return; 
+            }
+        }
+
+        // فحص النقر على أزرار الموسيقى
+        // زر السابق
+        if (clickX >= musicStartX && clickX <= musicStartX + btnWidth && clickY >= musicBarY && clickY <= musicBarY + btnHeight) {
+            changeTrack(-1);
+            return;
+        }
+        // زر تشغيل / إيقاف مؤقت
+        let playBtnX = musicStartX + btnWidth + btnGap;
+        if (clickX >= playBtnX && clickX <= playBtnX + btnWidth && clickY >= musicBarY && clickY <= musicBarY + btnHeight) {
+            if (isMusicPlaying) {
+                bgMusic.pause();
+                isMusicPlaying = false;
+            } else {
+                bgMusic.play().catch(err => console.log("جاري التشغيل المباشر..."));
+                isMusicPlaying = true;
+            }
+            return;
+        }
+        // زر التالي
+        let nextBtnX = musicStartX + 2 * (btnWidth + btnGap);
+        if (clickX >= nextBtnX && clickX <= nextBtnX + btnWidth && clickY >= musicBarY && clickY <= musicBarY + btnHeight) {
+            changeTrack(1);
+            return;
+        }
+    }
+
+    // تفعيل قفز الطائر واللعب
+    if (gameOver) {
+        resetGame();
+    } else {
+        if (!isMusicPlaying && !gameStarted) {
+            bgMusic.play().catch(err => console.log("المتصفح ينتظر نقرة إضافية لبدء الصوت"));
+            isMusicPlaying = true;
+        }
+        gameStarted = true; 
+        velocity = jump;
+    }
+}
+
+function resetGame() {
+    birdY = 250;
+    velocity = 0;
+    rotation = 0;
+    towers = [];
+    score = 0;
+    gameOver = false;
+    gameStarted = false; 
+    frames = 0;
+    
+    bgMusic.currentTime = 0;
+    if (isMusicPlaying) bgMusic.play().catch(err => {});
+}
+
+function update() {
+    if (!gameStarted) return;
+
+    frames++;
+    velocity += gravity;
+    birdY += velocity;
+
+    if (velocity < 0) {
+        rotation = Math.max(-0.3, velocity * 0.06);
+    } else {
+        rotation = Math.min(0.7, velocity * 0.05);
+    }
+
+    if (birdY + birdHeight >= canvas.height || birdY <= 0) {
+        gameOver = true;
+    }
+
+    if (frames % 90 === 0) {
+        let minHeight = 60;
+        let maxHeight = canvas.height - towerGap - 80;
+        let topTowerHeight = Math.floor(Math.random() * (maxHeight - minHeight + 1)) + minHeight;
+
+        towers.push({
+            x: canvas.width,
+            top: topTowerHeight,
+            bottom: canvas.height - topTowerHeight - towerGap,
+            passed: false
+        });
+    }
+
+    for (let i = towers.length - 1; i >= 0; i--) {
+        towers[i].x -= towerSpeed;
+
+        if (
+            birdX + 4 < towers[i].x + towerWidth &&
+            birdX + birdWidth - 4 > towers[i].x &&
+            (birdY + 4 < towers[i].top || birdY + birdHeight - 4 > canvas.height - towers[i].bottom)
+        ) {
+            gameOver = true;
+        }
+
+        if (!towers[i].passed && towers[i].x + towerWidth < birdX) {
+            score++;
+            if (score > highScore) highScore = score;
+            towers[i].passed = true;
+        }
+
+        if (towers[i].x + towerWidth < 0) {
+            towers.splice(i, 1);
+        }
+    }
+}
+
+function draw() {
+    if (isBgLoaded) {
+        ctx.drawImage(bgImg, 0, 0, canvas.width, canvas.height);
+    } else {
+        ctx.fillStyle = "#4ec0ca";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // رسم الأبراج
+    for (let i = 0; i < towers.length; i++) {
+        let topGrad = ctx.createLinearGradient(towers[i].x, 0, towers[i].x + towerWidth, 0);
+        topGrad.addColorStop(0, "#73bf2e");
+        topGrad.addColorStop(0.5, "#9ae754");
+        topGrad.addColorStop(1, "#558020");
+        ctx.fillStyle = topGrad;
+        
+        ctx.fillRect(towers[i].x, 0, towerWidth, towers[i].top);
+        ctx.strokeRect(towers[i].x, -5, towerWidth, towers[i].top + 5);
+
+        ctx.fillRect(towers[i].x, canvas.height - towers[i].bottom, towerWidth, towers[i].bottom);
+        ctx.strokeRect(towers[i].x, canvas.height - towers[i].bottom, towerWidth, towers[i].bottom + 5);
+    }
+
+    // رسم الطائر
+    ctx.save();
+    ctx.translate(birdX + birdWidth / 2, birdY + birdHeight / 2);
+    ctx.rotate(rotation);
+    
+    let activeSkin = skins[currentSkinIndex];
+    if (activeSkin.loaded) {
+        ctx.drawImage(activeSkin.img, -birdWidth / 2, -birdHeight / 2, birdWidth, birdHeight);
+    } else {
+        ctx.fillStyle = activeSkin.fallbackColor;
+        ctx.beginPath();
+        ctx.arc(0, 0, birdHeight / 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+    }
+    ctx.restore();
+
+    // طباعة النصوص لوحة الواجهة
+    ctx.fillStyle = "#FFF";
+    ctx.strokeStyle = "#000";
+    ctx.lineWidth = 6;
+    ctx.font = "bold 34px sans-serif";
+    ctx.textAlign = "center";
+
+    if (gameStarted) {
+        ctx.strokeText(score, canvas.width / 2, 60);
+        ctx.fillText(score, canvas.width / 2, 60);
+    }
+
+    // --- 4. واجهة القوائم (تظهر فقط عند عدم اللعب) ---
+    if (!gameStarted && !gameOver) {
+        // تظليل اللوحة الخلفية للقوائم
+        ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
+        ctx.fillRect(startX - 15, skinBarY - 15, totalBarWidth + 30, 195);
+
+        ctx.fillStyle = "#FFF";
+        ctx.font = "bold 13px sans-serif";
+        ctx.strokeText("اختر مظهر الشخصية //", canvas.width / 2, skinBarY + skinBoxHeight + 18);
+        ctx.fillText("اختر مظهر الشخصية //", canvas.width / 2, skinBarY + skinBoxHeight + 18);
+
+        // رسم مربعات اختيار الشخصيات الثلاثة
+        for (let i = 0; i < skins.length; i++) {
+            let boxX = startX + i * (skinBoxWidth + skinBoxGap);
+            ctx.fillStyle = (i === currentSkinIndex) ? "#fff" : "rgba(255, 255, 255, 0.3)";
+            ctx.fillRect(boxX, skinBarY, skinBoxWidth, skinBoxHeight);
+            ctx.strokeStyle = (i === currentSkinIndex) ? "#fffa00" : "#000";
+            ctx.lineWidth = (i === currentSkinIndex) ? 3 : 2;
+            ctx.strokeRect(boxX, skinBarY, skinBoxWidth, skinBoxHeight);
+
+            if (skins[i].loaded) {
+                ctx.drawImage(skins[i].img, boxX + 8, skinBarY + 8, skinBoxWidth - 16, skinBoxHeight - 16);
+            }
+        }
+
+        // --- رسم قائمة مشغل الموسيقى ---
+        ctx.fillStyle = "#fffa00";
+        ctx.font = "bold 12px sans-serif";
+        ctx.fillText("🎵 " + playlist[currentTrackIndex].title, canvas.width / 2, musicBarY - 10);
+
+        const labels = ["السابق", isMusicPlaying ? "||" : "▶", "التالي"];
+        const btnPositions = [musicStartX, musicStartX + btnWidth + btnGap, musicStartX + 2 * (btnWidth + btnGap)];
+
+        for (let i = 0; i < 3; i++) {
+            ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
+            ctx.fillRect(btnPositions[i], musicBarY, btnWidth, btnHeight);
+            ctx.strokeStyle = "#000";
+            ctx.lineWidth = 2;
+            ctx.strokeRect(btnPositions[i], musicBarY, btnWidth, btnHeight);
+            
+            ctx.fillStyle = "#000";
+            ctx.font = "bold 11px sans-serif";
+            ctx.fillText(labels[i], btnPositions[i] + btnWidth / 2, musicBarY + 18);
+        }
+
+        // إرشاد بدء الطيران
+        ctx.fillStyle = "#FFF";
+        ctx.font = "bold 20px sans-serif";
+        ctx.strokeText("اضغط مسافة أو انقر للطيران", canvas.width / 2, canvas.height / 2 + 125);
+        ctx.fillText("اضغط مسافة أو انقر للطيران", canvas.width / 2, canvas.height / 2 + 125);
+    }
+
+    if (gameOver) {
+        ctx.fillStyle = "rgba(0, 0, 0, 0.65)";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#ff4757";
+        ctx.font = "bold 42px sans-serif";
+        ctx.fillText("لقد خسرت", canvas.width / 2, canvas.height / 2 - 20);
+        ctx.fillStyle = "#FFF";
+        ctx.font = "16px sans-serif";
+        ctx.fillText("اضغط مسافة للعودة واختيار مظهر جديد", canvas.width / 2, canvas.height / 2 + 30);
+    }
+}
+
+function loop() {
+    update();
+    draw();
+    requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+
+</body>
+</html>
